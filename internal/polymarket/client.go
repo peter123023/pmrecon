@@ -52,14 +52,12 @@ type page[T any] struct {
 }
 
 // Positions 拉取钱包全部仓位。接口只支持游标分页，offset 会直接 400。
+// 超过分页上限时和 Trades 一样返回 ErrTruncated：仓位被截断会让 redeem 少算可回收金额，
+// 静默返回部分结果比报错更危险。
 func (c *Client) Positions(ctx context.Context, user string) ([]Position, error) {
 	q := url.Values{}
 	q.Set("user", user)
-	ps, err := paginate[Position](ctx, c, "/v2/positions", q)
-	if errors.Is(err, ErrTruncated) {
-		return ps, nil
-	}
-	return ps, err
+	return paginate[Position](ctx, c, "/v2/positions", q)
 }
 
 // Trades 拉取钱包全部成交。同一分页契约，但成交量远大于持仓，maxPages 会先撞到上限。

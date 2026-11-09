@@ -17,7 +17,6 @@ const (
 type col struct {
 	name  string
 	right bool
-	width int
 }
 
 // table 按 rune 数算列宽。按字节算的话，带变音符的标题（Polymarket 里很常见）
@@ -41,23 +40,10 @@ func table(w io.Writer, cols []col, rows [][]string) {
 			}
 		}
 	}
-	for i, c := range cols {
-		if c.width > 0 && widths[i] > c.width {
-			widths[i] = c.width
-		}
-	}
-
 	writeRow := func(vals []string) {
 		parts := make([]string, len(cols))
 		for i := range cols {
 			v := vals[i]
-			if n := widths[i]; utf8.RuneCountInString(v) > n {
-				if n <= 3 {
-					v = ""
-				} else {
-					v = truncate(v, n)
-				}
-			}
 			pad := strings.Repeat(" ", widths[i]-utf8.RuneCountInString(v))
 			if cols[i].right {
 				parts[i] = pad + v

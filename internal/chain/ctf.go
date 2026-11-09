@@ -21,6 +21,7 @@ const (
 	DefaultRPCURL          = "https://polygon-bor-rpc.publicnode.com"
 	selectorBalanceOfBatch = "0x4e1273f4" // balanceOfBatch(address[],uint256[])
 	maxTokensPerCall       = 200
+	maxUintArrayLen        = 10000
 )
 
 type Client struct {
@@ -89,6 +90,8 @@ func (c *Client) Balances(ctx context.Context, owner string, tokenIDs []string) 
 	return out, nil
 }
 
+// ethCall 失败时重试两次。公共 RPC 节点抖动很常见，而 check 一次要发多个分片请求，
+// 任何一个分片失败都会让整轮对账作废。
 func (c *Client) ethCall(ctx context.Context, to, data string) ([]byte, error) {
 	body, err := json.Marshal(rpcRequest{
 		JSONRPC: "2.0",
@@ -99,32 +102,63 @@ func (c *Client) ethCall(ctx context.Context, to, data string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(attempt) * 500 * time.Millisecond):
+			}
+		}
+		raw, retry, err := c.callOnce(ctx, body)
+		if err == nil {
+			return raw, nil
+		}
+		lastErr = err
+		if !retry {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+// callOnce 返回 retry=true 表示这轮失败值得重试（网络错误、429、5xx）；
+// 合约 revert 或 JSON-RPC 业务错误重试也不会变好。
+func (c *Client) callOnce(ctx context.Context, body []byte) ([]byte, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.RPCURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	defer resp.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return nil, err
+		return nil, true, err
+	}
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		return nil, true, fmt.Errorf("rpc 返回 %s: %s", resp.Status, strings.TrimSpace(string(payload)))
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("rpc 返回 %s: %s", resp.Status, strings.TrimSpace(string(payload)))
+		return nil, false, fmt.Errorf("rpc 返回 %s: %s", resp.Status, strings.TrimSpace(string(payload)))
 	}
 	var rr rpcResponse
 	if err := json.Unmarshal(payload, &rr); err != nil {
-		return nil, fmt.Errorf("解析 rpc 响应失败: %w", err)
+		return nil, true, fmt.Errorf("解析 rpc 响应失败: %w", err)
 	}
 	if rr.Error != nil {
-		return nil, fmt.Errorf("rpc 错误 %d: %s", rr.Error.Code, rr.Error.Message)
+		return nil, false, fmt.Errorf("rpc 错误 %d: %s", rr.Error.Code, rr.Error.Message)
 	}
-	return hex.DecodeString(strings.TrimPrefix(rr.Result, "0x"))
+	raw, err := hex.DecodeString(strings.TrimPrefix(rr.Result, "0x"))
+	if err != nil {
+		return nil, false, err
+	}
+	return raw, false, nil
 }
 
 func encodeBalanceOfBatch(owner string, tokenIDs []string) (string, error) {
@@ -178,12 +212,16 @@ func decodeUintArray(raw []byte) ([]*big.Int, error) {
 		return nil, fmt.Errorf("返回数据过短：%d 字节", len(raw))
 	}
 	offset := new(big.Int).SetBytes(raw[:32]).Int64()
-	if offset+32 > int64(len(raw)) {
+	if offset < 0 || offset+32 > int64(len(raw)) {
 		return nil, errors.New("返回数据偏移越界")
 	}
 	length := new(big.Int).SetBytes(raw[offset : offset+32]).Int64()
-	if overhead := offset + 32 + 32*length; overhead > int64(len(raw)) {
-		return nil, fmt.Errorf("返回数据不完整：需要 %d 字节，实际 %d", overhead, len(raw))
+	// 不设上限的话，一个畸形 length 就能让下面的 make 直接申请几 GB 内存。
+	if length < 0 || length > maxUintArrayLen {
+		return nil, fmt.Errorf("返回数组长度异常：%d", length)
+	}
+	if total := offset + 32 + 32*length; total > int64(len(raw)) {
+		return nil, fmt.Errorf("返回数据不完整：需要 %d 字节，实际 %d", total, len(raw))
 	}
 	vals := make([]*big.Int, length)
 	for i := int64(0); i < length; i++ {

@@ -221,16 +221,21 @@ func complementaryPair(legs []Leg) (Leg, Leg, float64) {
 	return Leg{}, Leg{}, 0
 }
 
-// bothSides 用「同一 condition 下有两条不同 token 的持仓」判断两边都持有，
-// 不依赖 opposite_token_id 是否回填，这样 Blocked 统计不会因为字段缺失而漏。
+// bothSides 判断「两边都持有但不是互补对」，用于解释为什么有对却合不了。
+// 必须恰好两条有效腿且互为 opposite：NegRisk 的多结果市场可以同时持有多条，
+// 但那些腿之间没有互补关系，按「两边都持有」统计会给出误导性的提示。
 func bothSides(legs []Leg) bool {
-	var positive int
+	var positive []Leg
 	for _, l := range legs {
 		if l.Size > 0 {
-			positive++
+			positive = append(positive, l)
 		}
 	}
-	return positive >= 2
+	if len(positive) != 2 {
+		return false
+	}
+	a, b := positive[0], positive[1]
+	return a.Opposite == b.TokenID || b.Opposite == a.TokenID
 }
 
 // Diff 是链上余额与 API 口径的单条差异。
@@ -245,12 +250,11 @@ type Diff struct {
 
 // Compare 把链上余额（按 token 索引，单位已换算成份额）与仓位数据对齐。
 // 只报告超过 tolerance 的差异，链上缺失按 0 处理——那通常意味着仓位已被赎回但 API 还没刷新。
+// 覆盖范围受限于 API 报告的 token：链上有、接口没列的仓位不会出现在这里。
 func Compare(ms []Market, chain map[string]float64, tolerance float64) []Diff {
 	var out []Diff
-	seen := map[string]bool{}
 	for _, m := range ms {
 		for _, l := range m.Legs {
-			seen[l.TokenID] = true
 			cb := chain[l.TokenID]
 			d := l.Size - cb
 			if math.Abs(d) > tolerance {
@@ -264,12 +268,6 @@ func Compare(ms []Market, chain map[string]float64, tolerance float64) []Diff {
 				})
 			}
 		}
-	}
-	for id, v := range chain {
-		if seen[id] || v <= tolerance {
-			continue
-		}
-		out = append(out, Diff{TokenID: id, Chain: v, Delta: round6(-v)})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return math.Abs(out[i].Delta) > math.Abs(out[j].Delta) })
 	return out

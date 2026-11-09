@@ -103,11 +103,15 @@ func main() {
 	defer cancel()
 
 	positions, err := api.Positions(ctx, wallet)
-	if err != nil {
+	truncated := errors.Is(err, polymarket.ErrTruncated)
+	if err != nil && !truncated {
 		fmt.Fprintf(os.Stderr, "拉取仓位失败: %v\n", err)
 		os.Exit(1)
 	}
 	markets := recon.Group(positions)
+	if truncated && cmd != "history" {
+		fmt.Fprintln(os.Stderr, "注意：仓位超过接口分页上限，只覆盖最近记录，可赎回/可合并金额可能偏小。")
+	}
 
 	switch cmd {
 	case "positions":
@@ -118,13 +122,13 @@ func main() {
 		recon.Merge(os.Stdout, wallet, recon.PlanMerge(markets))
 	case "history":
 		trades, err := api.Trades(ctx, wallet)
-		truncated := errors.Is(err, polymarket.ErrTruncated)
-		if err != nil && !truncated {
+		tradesTruncated := errors.Is(err, polymarket.ErrTruncated)
+		if err != nil && !tradesTruncated {
 			fmt.Fprintf(os.Stderr, "拉取成交失败: %v\n", err)
 			os.Exit(1)
 		}
 		ledger := recon.Reconcile(trades, markets, *tolerance)
-		ledger.Truncated = truncated
+		ledger.Truncated = truncated || tradesTruncated
 		recon.History(os.Stdout, wallet, ledger, *all)
 	case "check":
 		ids := tokenIDs(markets)
@@ -181,7 +185,7 @@ func runWatch(ctx context.Context, api *polymarket.Client, wallet string, interv
 	fails := 0
 	for i := 1; rounds == 0 || i <= rounds; i++ {
 		positions, err := api.Positions(ctx, wallet)
-		if err != nil {
+		if err != nil && !errors.Is(err, polymarket.ErrTruncated) {
 			if ctx.Err() != nil {
 				return nil
 			}

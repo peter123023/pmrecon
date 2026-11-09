@@ -66,14 +66,6 @@ func TestHistoryRenderShowsOnlyHeldByDefault(t *testing.T) {
 	}
 }
 
-func TestTableTruncatesInsteadOfPanicking(t *testing.T) {
-	var buf bytes.Buffer
-	table(&buf, []col{{name: "A", width: 6}}, [][]string{{"0123456789"}})
-	if !strings.Contains(buf.String(), "...") {
-		t.Errorf("expected truncation, got %q", buf.String())
-	}
-}
-
 func TestTitleTruncatesOnRuneBoundaries(t *testing.T) {
 	long := strings.Repeat("Will Chênois win the 2026 cup? ", 4)
 	got := title(long)

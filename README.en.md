@@ -70,6 +70,7 @@ On-chain reads target `ConditionalTokens 0x4D97DCd97eC945f40cF65F87097ACe5EA0476
 - `/v2/holders` returns 403, so there is no holder-level analysis.
 - `merge` estimates pairs as `min(leg A, leg B)` and only trusts `mergeable=true`. Whether a merge actually goes through is up to the Polymarket UI.
 - The `uint256[]` decoder in `check` only handles the shape `balanceOfBatch` returns; it is not a general ABI decoder.
+- `check` only queries tokens the API listed. Balances that exist on-chain but are missing from the API response are invisible to it.
 - `history` makes no cross-wallet attribution: "transferred in" only means the local trade history can't explain it, not that a transfer definitely happened.
 - `watch` diffs against an in-memory baseline, so restarting loses the baseline. Nothing is persisted.
 - No rate limiting beyond retries; a single query issues between 1 and 40 requests.

@@ -127,21 +127,21 @@ func TestCompareReportsBothDirections(t *testing.T) {
 		pos("0xa", "t1", "Yes", 10, 1, 1),
 		pos("0xa", "t2", "No", 5, 1, 1),
 	})
-	// t1 链上少 0.5，t2 链上为 0，t3 只在链上有余额。
-	chain := map[string]float64{"t1": 9.5, "t3": 7}
+	// t1 链上多 0.5（接口少报），t2 链上没有（接口多报）。
+	chain := map[string]float64{"t1": 10.5}
 	diffs := Compare(ms, chain, 0.001)
-	if len(diffs) != 3 {
-		t.Fatalf("diffs = %d, want 3: %+v", len(diffs), diffs)
+	if len(diffs) != 2 {
+		t.Fatalf("diffs = %d, want 2: %+v", len(diffs), diffs)
 	}
 	byToken := map[string]Diff{}
 	for _, d := range diffs {
 		byToken[d.TokenID] = d
 	}
-	if d := byToken["t1"]; d.Delta != 0.5 {
-		t.Errorf("t1 diff = %+v, want +0.5", d)
+	if d := byToken["t1"]; d.Delta != -0.5 {
+		t.Errorf("t1 diff = %+v, want -0.5", d)
 	}
-	if d := byToken["t3"]; d.Delta != -7 || d.API != 0 {
-		t.Errorf("chain-only diff = %+v", d)
+	if d := byToken["t2"]; d.Delta != 5 || d.Chain != 0 {
+		t.Errorf("t2 diff = %+v, want api 5 chain 0", d)
 	}
 	if math.Abs(diffs[0].Delta) < math.Abs(diffs[len(diffs)-1].Delta) {
 		t.Errorf("diffs not sorted by magnitude: %+v", diffs)
