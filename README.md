@@ -1,12 +1,12 @@
 # pmrecon
 
-[English](README.en.md)
+[English](README.en.md) | **中文**
 
 Polymarket 仓位对账工具：把官网持仓页看不出问题的几件事算清楚——哪些仓位已经结算但还没赎回、哪些 YES/NO 互补份额可以合并释放资金、接口显示的份额和链上 CTF 余额是否一致。
 
 只读。不读私钥，不签名，不发交易。赎回和合并只输出计划，执行仍然要你自己去做。
 
-## 装
+## 安装
 
 ```bash
 make build      # -> bin/pmrecon
@@ -15,7 +15,7 @@ make test
 
 只用到标准库。Go 1.22+。
 
-## 用
+## 使用
 
 ```bash
 pmrecon positions 0x9cb98fc57fe8a3bdf75c3b48bd419e5d262f7b80

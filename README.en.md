@@ -1,6 +1,6 @@
 # pmrecon
 
-[中文](README.md)
+**English** | [中文](README.md)
 
 A position reconciliation tool for Polymarket. It answers the three questions the portfolio page doesn't: which positions have already settled but were never redeemed, where you hold both sides of a complementary pair and can merge to free up cash, and whether the share counts reported by the API actually match your on-chain CTF balance.
 
